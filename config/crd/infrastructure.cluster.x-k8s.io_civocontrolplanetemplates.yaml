@@ -1,0 +1,103 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: civocontrolplanetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CivoControlPlaneTemplate
+    listKind: CivoControlPlaneTemplateList
+    plural: civocontrolplanetemplates
+    singular: civocontrolplanetemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CivoControlPlaneTemplate is the ClusterClass template for
+          CivoControlPlanes.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CivoControlPlaneTemplateSpec is a CivoControlPlaneTemplate's
+              spec.
+            properties:
+              template:
+                description: CivoControlPlaneTemplateResource is a template's CivoControlPlane.
+                properties:
+                  metadata:
+                    description: ObjectMeta is the metadata a template may carry.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                    type: object
+                  spec:
+                    description: |-
+                      CivoControlPlaneTemplateResourceSpec is a template's control plane
+                      spec; version comes from the Cluster's topology.
+                    properties:
+                      applications:
+                        items:
+                          type: string
+                        type: array
+                      civoVersion:
+                        type: string
+                      clusterType:
+                        enum:
+                        - k3s
+                        - talos
+                        type: string
+                      cniPlugin:
+                        enum:
+                        - flannel
+                        - cilium
+                        type: string
+                      disableMetricsServer:
+                        type: boolean
+                      disableTraefik:
+                        type: boolean
+                      firewallID:
+                        type: string
+                      nodeCount:
+                        format: int32
+                        type: integer
+                      nodeSize:
+                        type: string
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true

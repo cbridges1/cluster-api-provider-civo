@@ -1,0 +1,114 @@
+# A ClusterClass for Civo managed Kubernetes (K3s or Talos) — what
+# hyve-civo-module creates. Needs a Secret (default name civo-credentials)
+# in the namespace with `token`, a Civo API key. herd reads the annotation
+# (default Kubernetes version; Civo's matching label is picked by the
+# provider, or set civoVersion).
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: civo
+  annotations:
+    herd.io/default-version: v1.31.2
+spec:
+  infrastructure:
+    templateRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: CivoClusterTemplate
+      name: civo
+  controlPlane:
+    templateRef:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+      kind: CivoControlPlaneTemplate
+      name: civo
+  variables:
+    - name: region
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: LON1, description: Civo region.}
+    - name: credentialsSecret
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: civo-credentials}
+    - name: networkID
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: "", description: Civo network; empty is the region's default.}
+    - name: clusterType
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, enum: [k3s, talos], default: k3s}
+    - name: civoVersion
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: "", description: Exact Civo version label; empty matches the Kubernetes version.}
+    - name: cniPlugin
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, enum: [flannel, cilium], default: flannel}
+    - name: nodeSize
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: g4s.kube.medium}
+    - name: nodeCount
+      required: false
+      schema:
+        openAPIV3Schema: {type: integer, minimum: 1, default: 3}
+    - name: disableTraefik
+      required: false
+      schema:
+        openAPIV3Schema: {type: boolean, default: false}
+    - name: disableMetricsServer
+      required: false
+      schema:
+        openAPIV3Schema: {type: boolean, default: false}
+  patches:
+    - name: civo-cluster
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoClusterTemplate
+            matchResources: {infrastructureCluster: true}
+          jsonPatches:
+            - {op: replace, path: /spec/template/spec/region, valueFrom: {variable: region}}
+            - {op: replace, path: /spec/template/spec/credentialsRef/name, valueFrom: {variable: credentialsSecret}}
+            - {op: replace, path: /spec/template/spec/networkID, valueFrom: {variable: networkID}}
+    - name: civo-control-plane
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: replace, path: /spec/template/spec/clusterType, valueFrom: {variable: clusterType}}
+            - {op: replace, path: /spec/template/spec/civoVersion, valueFrom: {variable: civoVersion}}
+            - {op: replace, path: /spec/template/spec/cniPlugin, valueFrom: {variable: cniPlugin}}
+            - {op: replace, path: /spec/template/spec/nodeSize, valueFrom: {variable: nodeSize}}
+            - {op: replace, path: /spec/template/spec/nodeCount, valueFrom: {variable: nodeCount}}
+            - {op: replace, path: /spec/template/spec/disableTraefik, valueFrom: {variable: disableTraefik}}
+            - {op: replace, path: /spec/template/spec/disableMetricsServer, valueFrom: {variable: disableMetricsServer}}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: CivoClusterTemplate
+metadata:
+  name: civo
+spec:
+  template:
+    spec:
+      region: LON1
+      networkID: ""
+      credentialsRef: {name: civo-credentials}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+kind: CivoControlPlaneTemplate
+metadata:
+  name: civo
+spec:
+  template:
+    spec:
+      clusterType: k3s
+      civoVersion: ""
+      cniPlugin: flannel
+      nodeSize: g4s.kube.medium
+      nodeCount: 3
+      disableTraefik: false
+      disableMetricsServer: false

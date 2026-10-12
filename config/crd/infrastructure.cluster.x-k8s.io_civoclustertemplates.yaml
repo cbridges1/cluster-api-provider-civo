@@ -1,0 +1,112 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: civoclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CivoClusterTemplate
+    listKind: CivoClusterTemplateList
+    plural: civoclustertemplates
+    singular: civoclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: CivoClusterTemplate is the ClusterClass template for CivoClusters.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: CivoClusterTemplateSpec is a CivoClusterTemplate's spec.
+            properties:
+              template:
+                description: CivoClusterTemplateResource is a template's CivoCluster.
+                properties:
+                  metadata:
+                    description: ObjectMeta is the metadata a template may carry.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                    type: object
+                  spec:
+                    description: CivoClusterSpec is where a cluster lives on Civo
+                      and how to reach the API.
+                    properties:
+                      controlPlaneEndpoint:
+                        description: controlPlaneEndpoint is set by the CivoControlPlane.
+                        minProperties: 1
+                        properties:
+                          host:
+                            description: host is the hostname or IP the API server
+                              is served on.
+                            type: string
+                          port:
+                            description: port is the port the API server is served
+                              on.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        type: object
+                      credentialsRef:
+                        description: |-
+                          credentialsRef names a Secret in this namespace holding `token`, a
+                          Civo API key.
+                        properties:
+                          name:
+                            description: name of the Secret.
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      networkID:
+                        description: networkID is the Civo network; empty uses the
+                          region's default.
+                        type: string
+                      region:
+                        description: region is the Civo region (e.g. NYC1, LON1, FRA1,
+                          PHX1).
+                        minLength: 1
+                        type: string
+                    required:
+                    - credentialsRef
+                    - region
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true

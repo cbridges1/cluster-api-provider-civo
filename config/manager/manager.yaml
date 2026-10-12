@@ -1,0 +1,96 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capcivo-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: capcivo-manager
+  namespace: capcivo-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: capcivo-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: capcivo-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: capcivo-manager
+    namespace: capcivo-system
+---
+# Lets Cluster API's core controllers manage this provider's kinds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: capcivo-aggregated-manager-role
+  labels:
+    cluster.x-k8s.io/aggregate-to-manager: "true"
+rules:
+  - apiGroups: [infrastructure.cluster.x-k8s.io]
+    resources: [civoclusters, civoclustertemplates, civocontrolplanes, civocontrolplanetemplates]
+    verbs: [create, delete, get, list, patch, update, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: capcivo-leader-election
+  namespace: capcivo-system
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: capcivo-leader-election
+  namespace: capcivo-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: capcivo-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: capcivo-manager
+    namespace: capcivo-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capcivo-controller-manager
+  namespace: capcivo-system
+  labels: {control-plane: capcivo-controller-manager}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {control-plane: capcivo-controller-manager}
+  template:
+    metadata:
+      labels: {control-plane: capcivo-controller-manager}
+    spec:
+      serviceAccountName: capcivo-manager
+      containers:
+        - name: manager
+          image: IMAGE
+          args: [--leader-elect]
+          ports:
+            - {name: healthz, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /readyz, port: healthz}
+          livenessProbe:
+            httpGet: {path: /healthz, port: healthz}
+          resources:
+            requests: {cpu: 10m, memory: 48Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
