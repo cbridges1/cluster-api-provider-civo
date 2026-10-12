@@ -8,7 +8,7 @@ kind: ClusterClass
 metadata:
   name: civo
   annotations:
-    herd.io/default-version: v1.34.2
+    herd.io/default-version: v1.35.0
 spec:
   infrastructure:
     templateRef:

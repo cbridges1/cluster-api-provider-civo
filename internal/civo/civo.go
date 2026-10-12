@@ -60,27 +60,33 @@ func Applications(spec *v1alpha1.CivoControlPlaneSpec) string {
 	return strings.Join(apps, ",")
 }
 
-// MatchVersion picks Civo's version label for a Kubernetes version and
-// cluster type: civoVersion if set, else the newest available label for
-// that type whose version is the requested one (v1.31.2 → 1.31.2-k3s1).
-// An empty version means Civo's default.
+// MatchVersion picks Civo's version label for a cluster: civoVersion if
+// set; for k3s, the newest non-deprecated label for the Kubernetes version
+// (v1.35.0 → 1.35.0-k3s1) — Civo refuses to create deprecated versions;
+// for Talos (whose labels are Talos versions, not Kubernetes ones), Civo's
+// default. An empty version means Civo's default.
 func MatchVersion(spec *v1alpha1.CivoControlPlaneSpec, available []civogo.KubernetesVersion) (string, error) {
 	if spec.CivoVersion != "" {
 		return spec.CivoVersion, nil
 	}
-	want := strings.TrimPrefix(spec.Version, "v")
-	if want == "" {
-		return "", nil
+	ctype := firstNonEmpty(spec.ClusterType, "k3s")
+	var usable []civogo.KubernetesVersion
+	for _, v := range available {
+		if (v.ClusterType == "" || v.ClusterType == ctype) && v.Type != "deprecated" {
+			usable = append(usable, v)
+		}
 	}
-	ctype := spec.ClusterType
-	if ctype == "" {
-		ctype = "k3s"
+	want := strings.TrimPrefix(spec.Version, "v")
+	if ctype == "talos" || want == "" {
+		for _, v := range usable {
+			if v.Default {
+				return v.Version, nil
+			}
+		}
+		return "", nil // Civo's own default
 	}
 	var hits []string
-	for _, v := range available {
-		if v.ClusterType != "" && v.ClusterType != ctype {
-			continue
-		}
+	for _, v := range usable {
 		label := strings.TrimPrefix(v.Version, "v")
 		if label == want || strings.HasPrefix(label, want+"-") || strings.HasPrefix(label, want+"+") {
 			hits = append(hits, v.Version)
@@ -88,13 +94,11 @@ func MatchVersion(spec *v1alpha1.CivoControlPlaneSpec, available []civogo.Kubern
 	}
 	if len(hits) == 0 {
 		var all []string
-		for _, v := range available {
-			if v.ClusterType == "" || v.ClusterType == ctype {
-				all = append(all, v.Version)
-			}
+		for _, v := range usable {
+			all = append(all, v.Version+" ("+v.Type+")")
 		}
 		sort.Strings(all)
-		return "", fmt.Errorf("Civo has no %s version for Kubernetes %s (available: %s)", ctype, spec.Version, strings.Join(all, ", "))
+		return "", fmt.Errorf("Civo has no usable %s version for Kubernetes %s (usable: %s; deprecated versions can't be created)", ctype, spec.Version, strings.Join(all, ", "))
 	}
 	sort.Strings(hits)
 	return hits[len(hits)-1], nil

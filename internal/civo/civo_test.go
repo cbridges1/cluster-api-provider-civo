@@ -17,19 +17,26 @@ func TestApplications(t *testing.T) {
 }
 
 func TestMatchVersion(t *testing.T) {
+	// What Civo's API returned on 2026-10-12 (trimmed).
 	avail := []civogo.KubernetesVersion{
-		{Version: "1.30.5-k3s1", ClusterType: "k3s"}, {Version: "1.31.2-k3s1", ClusterType: "k3s"},
-		{Version: "1.31.2-k3s2", ClusterType: "k3s"}, {Version: "talos-v1.5.0", ClusterType: "talos"},
+		{Version: "1.31.6-k3s1", ClusterType: "k3s", Type: "deprecated"},
+		{Version: "1.34.2-k3s1", ClusterType: "k3s", Type: "deprecated"},
+		{Version: "1.35.0-k3s1", ClusterType: "k3s", Type: "stable", Default: true},
+		{Version: "1.36.0-k3s1", ClusterType: "k3s", Type: "development"},
+		{Version: "1.27.0", ClusterType: "talos", Type: "stable", Default: true},
 	}
-	if v, err := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.31.2"}, avail); err != nil || v != "1.31.2-k3s2" {
-		t.Errorf("got %q, %v; want the newest 1.31.2 label", v, err)
+	if v, err := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.35.0"}, avail); err != nil || v != "1.35.0-k3s1" {
+		t.Errorf("got %q, %v", v, err)
 	}
-	if v, _ := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.31.2", CivoVersion: "1.30.5-k3s1"}, avail); v != "1.30.5-k3s1" {
+	_, err := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.34.2"}, avail)
+	if err == nil || !strings.Contains(err.Error(), "1.35.0-k3s1 (stable)") || strings.Contains(err.Error(), "1.34.2") && !strings.Contains(err.Error(), "Kubernetes v1.34.2") {
+		t.Errorf("deprecated version must be refused, listing usable ones: %v", err)
+	}
+	if v, _ := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.34.2", CivoVersion: "1.34.2-k3s1"}, avail); v != "1.34.2-k3s1" {
 		t.Errorf("civoVersion override ignored: %q", v)
 	}
-	_, err := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.99.0"}, avail)
-	if err == nil || !strings.Contains(err.Error(), "1.31.2-k3s1") {
-		t.Errorf("want an error listing what's available, got %v", err)
+	if v, _ := MatchVersion(&v1alpha1.CivoControlPlaneSpec{Version: "v1.35.0", ClusterType: "talos"}, avail); v != "1.27.0" {
+		t.Errorf("talos: got %q, want Civo's default Talos version", v)
 	}
 }
 

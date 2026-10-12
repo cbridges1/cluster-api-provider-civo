@@ -61,7 +61,7 @@ func (f *fakeCivo) DeleteKubernetesCluster(id string) (*civogo.SimpleResponse, e
 	return &civogo.SimpleResponse{Result: "success"}, nil
 }
 func (f *fakeCivo) ListAvailableKubernetesVersions() ([]civogo.KubernetesVersion, error) {
-	return []civogo.KubernetesVersion{{Version: "1.31.2-k3s1", ClusterType: "k3s"}}, nil
+	return []civogo.KubernetesVersion{{Version: "1.31.2-k3s1", ClusterType: "k3s", Type: "stable"}}, nil
 }
 func (f *fakeCivo) DeleteFirewall(id string) (*civogo.SimpleResponse, error) {
 	f.deletedFirewalls = append(f.deletedFirewalls, id)
