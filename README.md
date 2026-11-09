@@ -2,12 +2,12 @@
 
 A [Cluster API](https://cluster-api.sigs.k8s.io) provider for
 [Civo](https://www.civo.com) managed Kubernetes (K3s or Talos), built on
-Civo's Go SDK. It does what [hyve-civo-module](https://github.com/cbridges1/hyve-civo-module)
-did: create the cluster with one node pool, publish its kubeconfig and
-endpoint for Cluster API, scale the pool, and on delete reclaim the volumes
-(PVCs first — deleting the cluster abandons them), delete the cluster, then
-delete the firewall Civo created for it. Works with
-[Rancher Turtles](https://turtles.docs.rancher.com) and [herd](https://github.com/cbridges1/herd).
+Civo's Go SDK. It creates the cluster with one node pool, publishes its
+kubeconfig and endpoint for Cluster API, scales the pool, and on delete
+reclaims the volumes (PVCs first — deleting the cluster abandons them),
+deletes the cluster, then deletes the firewall Civo created for it. Works
+with clusterctl, the Cluster API Operator and
+[Rancher Turtles](https://turtles.docs.rancher.com).
 
 ## Kinds (`infrastructure.cluster.x-k8s.io/v1alpha1`)
 
@@ -33,10 +33,23 @@ spec:
     url: https://github.com/cbridges1/cluster-api-provider-civo/releases/v0.1.0/infrastructure-components.yaml
 ```
 
+## ClusterClass
+
+Each release publishes `clusterclass-civo.yaml` (from
+[templates/](templates/clusterclass-civo.yaml)) beside the components, where
+clusterctl finds it. It has no namespace; install it in the one your
+clusters are built from:
+
 ```bash
-kubectl -n capi-clusters create secret generic civo-credentials --from-literal=token=...
-kubectl -n capi-clusters apply -f templates/clusterclass-civo.yaml
-herd cluster create web --class civo --set region=NYC1 --set nodeSize=g4s.kube.small --set nodeCount=1
+kubectl -n capi-clusters apply -f https://github.com/cbridges1/cluster-api-provider-civo/releases/download/v0.2.0/clusterclass-civo.yaml
+```
+
+Its variables are optional; `firewallRules` opens nothing unless a cluster
+sets it. The provider reads the API key from a Secret in each *cluster's*
+namespace:
+
+```bash
+kubectl -n <cluster namespace> create secret generic civo-credentials --from-literal=token=...
 ```
 
 ## Develop

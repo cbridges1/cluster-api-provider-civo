@@ -215,7 +215,7 @@ func (r *CivoControlPlaneReconciler) writeKubeconfig(ctx context.Context, cp *v1
 	return err
 }
 
-// delete removes the cluster the way hyve-civo-module does: PVCs first (so
+// delete removes the cluster: PVCs first (so
 // Civo reclaims their volumes — deleting the cluster abandons them), then
 // the cluster, then the firewall Civo created for it.
 func (r *CivoControlPlaneReconciler) delete(ctx context.Context, cp *v1alpha1.CivoControlPlane, cluster *unstructured.Unstructured) (ctrl.Result, error) {
@@ -262,7 +262,7 @@ func (r *CivoControlPlaneReconciler) delete(ctx context.Context, cp *v1alpha1.Ci
 
 // deleteVolumes deletes the workload cluster's PVCs and reports whether
 // their PVs are gone (or the wait has timed out, or the cluster can't be
-// reached — it's best effort, as in hyve-civo-module).
+// reached — it's best effort).
 func (r *CivoControlPlaneReconciler) deleteVolumes(ctx context.Context, cp *v1alpha1.CivoControlPlane, kc *civogo.KubernetesCluster) bool {
 	lg := log.FromContext(ctx)
 	if kc.KubeConfig == "" {

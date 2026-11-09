@@ -3,7 +3,7 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // CivoControlPlaneSpec is a Civo managed Kubernetes cluster (K3s or Talos)
-// with one node pool — what hyve-civo-module creates.
+// with one node pool.
 type CivoControlPlaneSpec struct {
 	// version is the Kubernetes version (set from the Cluster's topology),
 	// e.g. v1.31.2. It's matched against Civo's available versions for the

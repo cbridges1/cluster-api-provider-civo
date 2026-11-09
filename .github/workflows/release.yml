@@ -1,6 +1,6 @@
 # Builds the manager image on every push; on a v* tag also publishes the
 # clusterctl/Turtles release artifacts (infrastructure-components.yaml,
-# metadata.yaml) to the GitHub release.
+# metadata.yaml, clusterclass-civo.yaml) to the GitHub release.
 name: release
 
 on:
@@ -47,6 +47,6 @@ jobs:
         run: |
           pip install pyyaml
           python3 hack/components.py ghcr.io/${{ github.repository_owner }}/cluster-api-provider-civo:${GITHUB_REF_NAME}
-          gh release create "$GITHUB_REF_NAME" out/infrastructure-components.yaml out/metadata.yaml --title "$GITHUB_REF_NAME" --generate-notes
+          gh release create "$GITHUB_REF_NAME" out/infrastructure-components.yaml out/metadata.yaml out/clusterclass-*.yaml --title "$GITHUB_REF_NAME" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}

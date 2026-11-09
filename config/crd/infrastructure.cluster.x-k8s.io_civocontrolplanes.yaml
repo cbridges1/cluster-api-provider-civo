@@ -57,7 +57,7 @@ spec:
           spec:
             description: |-
               CivoControlPlaneSpec is a Civo managed Kubernetes cluster (K3s or Talos)
-              with one node pool — what hyve-civo-module creates.
+              with one node pool.
             properties:
               applications:
                 description: applications are Civo marketplace applications to install.

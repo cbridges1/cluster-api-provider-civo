@@ -1,14 +1,15 @@
-# A ClusterClass for Civo managed Kubernetes (K3s or Talos) — what
-# hyve-civo-module creates. Needs a Secret (default name civo-credentials)
-# in the namespace with `token`, a Civo API key. herd reads the annotation
-# (default Kubernetes version; Civo's matching label is picked by the
-# provider, or set civoVersion).
+# A ClusterClass for Civo managed Kubernetes (K3s or Talos). Each release
+# publishes it as clusterclass-civo.yaml, beside infrastructure-components.yaml,
+# where clusterctl finds it. It has no namespace: install it where its
+# Clusters (or what builds them) refer to it.
+#
+# The provider reads its API key from a Secret (default civo-credentials,
+# key token) in the *cluster's* namespace. A Cluster's topology version is
+# matched to Civo's labels by the provider (or set civoVersion).
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: ClusterClass
 metadata:
   name: civo
-  annotations:
-    herd.io/default-version: v1.35.0
 spec:
   infrastructure:
     templateRef:
@@ -61,21 +62,25 @@ spec:
       required: false
       schema:
         openAPIV3Schema: {type: boolean, default: false}
+    - name: firewallID
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, default: "", description: "An existing Civo firewall to use (kept when the cluster is deleted); empty has Civo create one, open on 80, 443 and 6443 only, and deleted with the cluster."}
     - name: firewallRules
       required: false
       schema:
         openAPIV3Schema:
           type: array
           default: []
-          description: Ingress rules added to the cluster's firewall, beside Civo's 80, 443 and 6443.
+          description: Ingress rules the provider adds to the cluster's firewall, beside Civo's 80, 443 and 6443, and removes with it. Needs cluster-api-provider-civo v0.2.0 or later.
           items:
             type: object
             required: [protocol, port]
             properties:
               protocol: {type: string, enum: [tcp, udp]}
               port: {type: integer, minimum: 1, maximum: 65535}
-              endPort: {type: integer, minimum: 1, maximum: 65535}
-              cidrs: {type: array, items: {type: string}}
+              endPort: {type: integer, minimum: 1, maximum: 65535, description: The last port of a range.}
+              cidrs: {type: array, items: {type: string}, description: Empty is everywhere (0.0.0.0/0).}
   patches:
     - name: civo-cluster
       definitions:
@@ -101,6 +106,16 @@ spec:
             - {op: replace, path: /spec/template/spec/nodeCount, valueFrom: {variable: nodeCount}}
             - {op: replace, path: /spec/template/spec/disableTraefik, valueFrom: {variable: disableTraefik}}
             - {op: replace, path: /spec/template/spec/disableMetricsServer, valueFrom: {variable: disableMetricsServer}}
+    # Only when set, so clusters that don't use it see no change.
+    - name: civo-firewall
+      enabledIf: '{{ if .firewallID }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: add, path: /spec/template/spec/firewallID, valueFrom: {variable: firewallID}}
     - name: civo-firewall-rules
       enabledIf: '{{ if .firewallRules }}true{{ end }}'
       definitions:
