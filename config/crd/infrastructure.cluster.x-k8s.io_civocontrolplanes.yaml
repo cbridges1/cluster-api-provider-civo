@@ -109,6 +109,48 @@ spec:
                   firewallID uses an existing firewall; empty lets Civo create one,
                   which the provider deletes with the cluster.
                 type: string
+              firewallRules:
+                description: |-
+                  firewallRules are ingress rules the provider keeps on the cluster's
+                  firewall, beside Civo's own (80, 443 and 6443 on the one it
+                  creates): added when missing, and removed when dropped from this
+                  list. Rules made some other way are left alone.
+                items:
+                  description: |-
+                    FirewallRule is one ingress rule: a port (or range) for a protocol,
+                    from some CIDRs.
+                  properties:
+                    cidrs:
+                      description: cidrs it's open to; empty is everywhere (0.0.0.0/0).
+                      items:
+                        type: string
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    endPort:
+                      description: endPort is the last port of a range; empty is just
+                        port.
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                    port:
+                      description: port is the port, or the first of a range.
+                      format: int32
+                      maximum: 65535
+                      minimum: 1
+                      type: integer
+                    protocol:
+                      description: protocol is tcp or udp.
+                      enum:
+                      - tcp
+                      - udp
+                      type: string
+                  required:
+                  - port
+                  - protocol
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
               nodeCount:
                 default: 3
                 description: nodeCount is the pool's node count; changing it scales

@@ -55,6 +55,14 @@ type CivoControlPlaneSpec struct {
 	// +optional
 	FirewallID string `json:"firewallID,omitempty"`
 
+	// firewallRules are ingress rules the provider keeps on the cluster's
+	// firewall, beside Civo's own (80, 443 and 6443 on the one it
+	// creates): added when missing, and removed when dropped from this
+	// list. Rules made some other way are left alone.
+	// +optional
+	// +listType=atomic
+	FirewallRules []FirewallRule `json:"firewallRules,omitempty"`
+
 	// controlPlaneEndpoint is the cluster's API endpoint. Set by the
 	// provider.
 	// +optional
@@ -144,6 +152,30 @@ type CivoControlPlaneTemplateResourceSpec struct {
 	DisableMetricsServer bool `json:"disableMetricsServer,omitempty"`
 	// +optional
 	FirewallID string `json:"firewallID,omitempty"`
+	// +optional
+	// +listType=atomic
+	FirewallRules []FirewallRule `json:"firewallRules,omitempty"`
+}
+
+// FirewallRule is one ingress rule: a port (or range) for a protocol,
+// from some CIDRs.
+type FirewallRule struct {
+	// protocol is tcp or udp.
+	// +kubebuilder:validation:Enum=tcp;udp
+	Protocol string `json:"protocol"`
+	// port is the port, or the first of a range.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+	// endPort is the last port of a range; empty is just port.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	EndPort int32 `json:"endPort,omitempty"`
+	// cidrs it's open to; empty is everywhere (0.0.0.0/0).
+	// +optional
+	// +listType=atomic
+	CIDRs []string `json:"cidrs,omitempty"`
 }
 
 // CivoControlPlaneTemplateResource is a template's CivoControlPlane.

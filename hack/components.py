@@ -39,6 +39,8 @@ with open(os.path.join(out, "metadata.yaml"), "w") as fh:
     yaml.safe_dump({
         "apiVersion": "clusterctl.cluster.x-k8s.io/v1alpha3",
         "kind": "Metadata",
-        "releaseSeries": [{"major": 0, "minor": 1, "contract": "v1beta2"}],
+        # One entry per minor release: clusterctl refuses a version whose
+        # series isn't listed.
+        "releaseSeries": [{"major": 0, "minor": 1, "contract": "v1beta2"}, {"major": 0, "minor": 2, "contract": "v1beta2"}],
     }, fh, sort_keys=False)
 print(f"out/infrastructure-components.yaml ({len(docs)} objects, image {image}) and out/metadata.yaml")

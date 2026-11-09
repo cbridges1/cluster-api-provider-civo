@@ -61,6 +61,21 @@ spec:
       required: false
       schema:
         openAPIV3Schema: {type: boolean, default: false}
+    - name: firewallRules
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: array
+          default: []
+          description: Ingress rules added to the cluster's firewall, beside Civo's 80, 443 and 6443.
+          items:
+            type: object
+            required: [protocol, port]
+            properties:
+              protocol: {type: string, enum: [tcp, udp]}
+              port: {type: integer, minimum: 1, maximum: 65535}
+              endPort: {type: integer, minimum: 1, maximum: 65535}
+              cidrs: {type: array, items: {type: string}}
   patches:
     - name: civo-cluster
       definitions:
@@ -86,6 +101,15 @@ spec:
             - {op: replace, path: /spec/template/spec/nodeCount, valueFrom: {variable: nodeCount}}
             - {op: replace, path: /spec/template/spec/disableTraefik, valueFrom: {variable: disableTraefik}}
             - {op: replace, path: /spec/template/spec/disableMetricsServer, valueFrom: {variable: disableMetricsServer}}
+    - name: civo-firewall-rules
+      enabledIf: '{{ if .firewallRules }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: add, path: /spec/template/spec/firewallRules, valueFrom: {variable: firewallRules}}
 ---
 apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
 kind: CivoClusterTemplate

@@ -14,7 +14,7 @@ delete the firewall Civo created for it. Works with
 | Kind | What it is |
 |---|---|
 | `CivoCluster` | `region`, `credentialsRef` (a Secret with `token`), optional `networkID`. Provisioned once the API key works there. |
-| `CivoControlPlane` | The managed cluster: `version` (from the Cluster's topology, matched to Civo's labels; or `civoVersion`), `clusterType` (k3s/talos), `cniPlugin` (flannel/cilium), `nodeSize`, `nodeCount`, `applications`, `disableTraefik`, `disableMetricsServer`, optional `firewallID`. |
+| `CivoControlPlane` | The managed cluster: `version` (from the Cluster's topology, matched to Civo's labels; or `civoVersion`), `clusterType` (k3s/talos), `cniPlugin` (flannel/cilium), `nodeSize`, `nodeCount`, `applications`, `disableTraefik`, `disableMetricsServer`, optional `firewallID`, and `firewallRules` (extra ingress rules — protocol, port, endPort, cidrs — the provider keeps on the cluster's firewall; it adds missing ones and removes ones dropped from the list, leaving Civo's and hand-made rules alone). |
 
 Both have `…Template` kinds; see [templates/clusterclass-civo.yaml](templates/clusterclass-civo.yaml).
 A Civo cluster with the Cluster's name is adopted rather than duplicated.

@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +28,8 @@ type fakeCivo struct {
 	created          []*civogo.KubernetesClusterConfig
 	deletedFirewalls []string
 	scaled           []int
+	rules            []civogo.FirewallRule
+	nextRule         int
 }
 
 func (f *fakeCivo) ListKubernetesClusters() (*civogo.PaginatedKubernetesClusters, error) {
@@ -68,6 +72,32 @@ func (f *fakeCivo) DeleteFirewall(id string) (*civogo.SimpleResponse, error) {
 	return &civogo.SimpleResponse{Result: "success"}, nil
 }
 
+func (f *fakeCivo) ListFirewallRules(id string) ([]civogo.FirewallRule, error) {
+	var out []civogo.FirewallRule
+	for _, r := range f.rules {
+		if r.FirewallID == id {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+func (f *fakeCivo) NewFirewallRule(c *civogo.FirewallRuleConfig) (*civogo.FirewallRule, error) {
+	f.nextRule++
+	r := civogo.FirewallRule{ID: fmt.Sprintf("rule-%d", f.nextRule), FirewallID: c.FirewallID, Protocol: c.Protocol, StartPort: c.StartPort,
+		EndPort: c.EndPort, Cidr: c.Cidr, Direction: c.Direction, Action: c.Action, Label: c.Label}
+	f.rules = append(f.rules, r)
+	return &r, nil
+}
+func (f *fakeCivo) DeleteFirewallRule(id, ruleID string) (*civogo.SimpleResponse, error) {
+	for i, r := range f.rules {
+		if r.FirewallID == id && r.ID == ruleID {
+			f.rules = append(f.rules[:i], f.rules[i+1:]...)
+			return &civogo.SimpleResponse{Result: "success"}, nil
+		}
+	}
+	return nil, fmt.Errorf("404 NotFound")
+}
+
 func setup(t *testing.T, existing ...*civogo.KubernetesCluster) (client.Client, *fakeCivo, *CivoControlPlaneReconciler) {
 	t.Helper()
 	s := runtime.NewScheme()
@@ -80,7 +110,7 @@ func setup(t *testing.T, existing ...*civogo.KubernetesCluster) (client.Client, 
 	}}
 	lbl := map[string]string{ClusterNameLabel: "web"}
 	cc := &v1alpha1.CivoCluster{ObjectMeta: metav1.ObjectMeta{Name: "web-cc", Namespace: "capi-clusters", Labels: lbl},
-		Spec: v1alpha1.CivoClusterSpec{Region: "LON1", CredentialsRef: v1alpha1.SecretRef{Name: "civo"}},
+		Spec:   v1alpha1.CivoClusterSpec{Region: "LON1", CredentialsRef: v1alpha1.SecretRef{Name: "civo"}},
 		Status: v1alpha1.CivoClusterStatus{Initialization: v1alpha1.CivoClusterInitializationStatus{Provisioned: ptr(true)}}}
 	cp := &v1alpha1.CivoControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "web-cp", Namespace: "capi-clusters", Labels: lbl},
 		Spec: v1alpha1.CivoControlPlaneSpec{Version: "v1.31.2", NodeSize: "g4s.kube.small", NodeCount: 1}}
@@ -169,3 +199,47 @@ func TestAdoptsExistingClusterByName(t *testing.T) {
 }
 
 var _ = time.Second
+
+func TestFirewallRules(t *testing.T) {
+	c, f, r := setup(t)
+	ctx := context.Background()
+	var cp v1alpha1.CivoControlPlane
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.FirewallRules = []v1alpha1.FirewallRule{{Protocol: "udp", Port: 31820}, {Protocol: "tcp", Port: 8000, EndPort: 8010, CIDRs: []string{"10.0.0.0/8"}}}
+	if err := c.Update(ctx, &cp); err != nil {
+		t.Fatal(err)
+	}
+	// Civo's own rule, and one made by hand: never touched.
+	f.rules = []civogo.FirewallRule{
+		{ID: "civo-6443", FirewallID: "fw-1", Protocol: "tcp", StartPort: "6443", EndPort: "6443", Cidr: []string{"0.0.0.0/0"}, Direction: "ingress", Label: "kubernetes api server"},
+		{ID: "manual", FirewallID: "fw-1", Protocol: "udp", StartPort: "9999", Cidr: []string{"0.0.0.0/0"}, Direction: "ingress"},
+	}
+
+	reconcile(t, r) // creates the cluster (firewall fw-1) and adds the rules while it builds
+	labelled := func() []string {
+		var out []string
+		for _, x := range f.rules {
+			if x.Label == civo.RuleLabel {
+				out = append(out, x.Protocol+"/"+x.StartPort+"-"+x.EndPort+"/"+strings.Join(x.Cidr, ","))
+			}
+		}
+		return out
+	}
+	if got := strings.Join(labelled(), " "); got != "udp/31820-31820/0.0.0.0/0 tcp/8000-8010/10.0.0.0/8" {
+		t.Fatalf("rules after create = %q", got)
+	}
+	reconcile(t, r) // nothing new
+	if len(f.rules) != 4 {
+		t.Fatalf("rules duplicated: %+v", f.rules)
+	}
+
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.FirewallRules = cp.Spec.FirewallRules[:1]
+	if err := c.Update(ctx, &cp); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, r) // the dropped one goes; the others stay
+	if got := strings.Join(labelled(), " "); got != "udp/31820-31820/0.0.0.0/0" || len(f.rules) != 3 {
+		t.Fatalf("rules after dropping one = %q (%d in all)", got, len(f.rules))
+	}
+}

@@ -25,6 +25,9 @@ type API interface {
 	DeleteKubernetesCluster(id string) (*civogo.SimpleResponse, error)
 	ListAvailableKubernetesVersions() ([]civogo.KubernetesVersion, error)
 	DeleteFirewall(id string) (*civogo.SimpleResponse, error)
+	ListFirewallRules(id string) ([]civogo.FirewallRule, error)
+	NewFirewallRule(r *civogo.FirewallRuleConfig) (*civogo.FirewallRule, error)
+	DeleteFirewallRule(id, ruleID string) (*civogo.SimpleResponse, error)
 }
 
 // Factory makes an API client for a token and region.
@@ -143,6 +146,75 @@ func Endpoint(raw string) (v1alpha1.APIEndpoint, error) {
 		return v1alpha1.APIEndpoint{}, fmt.Errorf("api endpoint %q: bad port", raw)
 	}
 	return v1alpha1.APIEndpoint{Host: host, Port: int32(port)}, nil
+}
+
+// RuleLabel marks the firewall rules the provider made from
+// firewallRules, so it changes only those.
+const RuleLabel = "cluster-api"
+
+func ruleKey(protocol, start, end string, cidrs []string) string {
+	c := append([]string(nil), cidrs...)
+	sort.Strings(c)
+	return strings.ToLower(protocol) + "/" + start + "-" + end + "/" + strings.Join(c, ",")
+}
+
+// SyncFirewallRules makes the firewall's cluster-api rules match
+// firewallRules: adds the missing ones and deletes those no longer listed.
+// Civo's own rules, and any made by hand, are left alone. Reports whether
+// it changed anything.
+func SyncFirewallRules(api API, firewallID string, rules []v1alpha1.FirewallRule) (bool, error) {
+	have, err := api.ListFirewallRules(firewallID)
+	if err != nil {
+		return false, fmt.Errorf("listing firewall %s's rules: %w", firewallID, err)
+	}
+	want := map[string]*civogo.FirewallRuleConfig{}
+	var order []string
+	for _, r := range rules {
+		end := r.EndPort
+		if end == 0 {
+			end = r.Port
+		}
+		cidrs := r.CIDRs
+		if len(cidrs) == 0 {
+			cidrs = []string{"0.0.0.0/0"}
+		}
+		start, stop := strconv.Itoa(int(r.Port)), strconv.Itoa(int(end))
+		k := ruleKey(r.Protocol, start, stop, cidrs)
+		if _, dup := want[k]; dup {
+			continue
+		}
+		order = append(order, k)
+		want[k] = &civogo.FirewallRuleConfig{FirewallID: firewallID, Protocol: strings.ToLower(r.Protocol), StartPort: start, EndPort: stop,
+			Cidr: cidrs, Direction: "ingress", Action: "allow", Label: RuleLabel}
+	}
+	changed := false
+	for _, h := range have {
+		if h.Label != RuleLabel || h.Direction != "ingress" {
+			continue
+		}
+		end := h.EndPort
+		if end == "" {
+			end = h.StartPort
+		}
+		k := ruleKey(h.Protocol, h.StartPort, end, h.Cidr)
+		if _, ok := want[k]; ok {
+			delete(want, k)
+			continue
+		}
+		if _, err := api.DeleteFirewallRule(firewallID, h.ID); err != nil && !IsNotFound(err) {
+			return changed, fmt.Errorf("deleting firewall rule %s: %w", h.ID, err)
+		}
+		changed = true
+	}
+	for _, k := range order {
+		if cfg, ok := want[k]; ok {
+			if _, err := api.NewFirewallRule(cfg); err != nil {
+				return changed, fmt.Errorf("adding firewall rule %s %s-%s: %w", cfg.Protocol, cfg.StartPort, cfg.EndPort, err)
+			}
+			changed = true
+		}
+	}
+	return changed, nil
 }
 
 func firstNonEmpty(s ...string) string {

@@ -157,6 +157,17 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 		cp.Status.FirewallID = kc.FirewallID
 		cp.Status.FirewallCreated = cp.Spec.FirewallID == ""
 	}
+	// The firewall exists from the start, so the rules go on while the
+	// cluster builds. Every pass: they come back if removed in Civo.
+	if cp.Status.FirewallID != "" {
+		changed, err := civo.SyncFirewallRules(api, cp.Status.FirewallID, cp.Spec.FirewallRules)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if changed {
+			lg.Info("updated the cluster's firewall rules", "firewall", cp.Status.FirewallID, "rules", len(cp.Spec.FirewallRules))
+		}
+	}
 	if kc.Status != "ACTIVE" || !kc.Ready || kc.KubeConfig == "" || kc.APIEndPoint == "" {
 		return wait(20*time.Second, "Provisioning", "Civo cluster "+kc.ID+" is "+kc.Status)
 	}
