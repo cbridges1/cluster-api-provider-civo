@@ -243,3 +243,91 @@ func TestFirewallRules(t *testing.T) {
 		t.Fatalf("rules after dropping one = %q (%d in all)", got, len(f.rules))
 	}
 }
+
+// clusterID adopts that cluster whatever its name, never creates one, and
+// leaves its pool alone while nodeCount is unset.
+func TestAdoptsByID(t *testing.T) {
+	c, f, r := setup(t, &civogo.KubernetesCluster{ID: "kc-old", Name: "legacy-name", Status: "ACTIVE", Ready: true, FirewallID: "fw-old",
+		KubeConfig: "apiVersion: v1\nkind: Config\n", APIEndPoint: "https://74.220.21.11:6443", Pools: []civogo.KubernetesPool{{ID: "pool-1", Count: 2}}},
+		&civogo.KubernetesCluster{ID: "kc-web", Name: "web", Status: "ACTIVE"})
+	ctx := context.Background()
+	var cp v1alpha1.CivoControlPlane
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.ClusterID, cp.Spec.NodeCount = "kc-old", 0
+	_ = c.Update(ctx, &cp)
+
+	reconcile(t, r)
+	_ = c.Get(ctx, key, &cp)
+	if len(f.created) != 0 || cp.Status.ClusterID != "kc-old" || cp.Status.FirewallID != "fw-old" {
+		t.Fatalf("created %d, status %+v", len(f.created), cp.Status)
+	}
+	if len(f.scaled) != 0 {
+		t.Errorf("scaled an adopted cluster with nodeCount unset: %v", f.scaled)
+	}
+	if cp.Status.Initialization.ControlPlaneInitialized == nil || !*cp.Status.Initialization.ControlPlaneInitialized {
+		t.Errorf("not initialized: %+v", cp.Status)
+	}
+}
+
+func TestAdoptByIDNotFound(t *testing.T) {
+	c, f, r := setup(t, &civogo.KubernetesCluster{ID: "kc-web", Name: "web", Status: "ACTIVE"})
+	ctx := context.Background()
+	var cp v1alpha1.CivoControlPlane
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.ClusterID = "kc-gone"
+	_ = c.Update(ctx, &cp)
+
+	reconcile(t, r)
+	_ = c.Get(ctx, key, &cp)
+	if len(f.created) != 0 || cp.Status.ClusterID != "" {
+		t.Fatalf("created %d, or took a cluster by name: %+v", len(f.created), cp.Status)
+	}
+	if got := cp.Status.Conditions[0].Reason; got != "ClusterNotFound" {
+		t.Errorf("reason = %s", got)
+	}
+}
+
+// A cluster another CivoControlPlane manages isn't adopted twice.
+func TestAdoptRefusesManagedCluster(t *testing.T) {
+	c, f, r := setup(t, &civogo.KubernetesCluster{ID: "kc-old", Name: "legacy", Status: "ACTIVE"})
+	ctx := context.Background()
+	owner := &v1alpha1.CivoControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "legacy-cp", Namespace: "prod", UID: "owner"},
+		Spec: v1alpha1.CivoControlPlaneSpec{Version: "v1.31.2"}}
+	if err := c.Create(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	owner.Status.ClusterID = "kc-old"
+	if err := c.Status().Update(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	var cp v1alpha1.CivoControlPlane
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.ClusterID = "kc-old"
+	cp.UID = "adopter"
+	_ = c.Update(ctx, &cp)
+
+	reconcile(t, r)
+	_ = c.Get(ctx, key, &cp)
+	if cp.Status.ClusterID != "" || len(f.created) != 0 || cp.Status.Conditions[0].Reason != "AlreadyManaged" {
+		t.Fatalf("status = %+v", cp.Status)
+	}
+}
+
+// deletionPolicy Retain leaves the cluster and its firewall.
+func TestDeletionPolicyRetain(t *testing.T) {
+	c, f, r := setup(t)
+	ctx := context.Background()
+	reconcile(t, r) // creates kc-1 with firewall fw-1
+	var cp v1alpha1.CivoControlPlane
+	_ = c.Get(ctx, key, &cp)
+	cp.Spec.DeletionPolicy = v1alpha1.DeletionPolicyRetain
+	_ = c.Update(ctx, &cp)
+	_ = c.Delete(ctx, &cp)
+	reconcile(t, r)
+	if _, ok := f.clusters["kc-1"]; !ok || len(f.deletedFirewalls) != 0 {
+		t.Fatalf("Retain deleted something: clusters %v, firewalls %v", f.clusters, f.deletedFirewalls)
+	}
+	if err := c.Get(ctx, key, &cp); err == nil {
+		t.Error("finalizer not removed")
+	}
+}

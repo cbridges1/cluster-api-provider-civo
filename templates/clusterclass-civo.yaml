@@ -53,7 +53,7 @@ spec:
     - name: nodeCount
       required: false
       schema:
-        openAPIV3Schema: {type: integer, minimum: 1, default: 3}
+        openAPIV3Schema: {type: integer, minimum: 1, description: Nodes in the pool; changing it scales the pool. Unset is 3 for a new cluster; an adopted cluster keeps its own.}
     - name: disableTraefik
       required: false
       schema:
@@ -81,6 +81,14 @@ spec:
               port: {type: integer, minimum: 1, maximum: 65535}
               endPort: {type: integer, minimum: 1, maximum: 65535, description: The last port of a range.}
               cidrs: {type: array, items: {type: string}, description: Empty is everywhere (0.0.0.0/0).}
+    - name: clusterID
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, description: "Adopts the existing Civo cluster with this ID instead of creating one; its name can differ from the Cluster's. Needs cluster-api-provider-civo v0.3.0 or later."}
+    - name: deletionPolicy
+      required: false
+      schema:
+        openAPIV3Schema: {type: string, enum: [Delete, Retain], description: "What deleting the Cluster does to the Civo cluster: Delete (the default) removes it, its volumes and the firewall Civo made for it; Retain leaves them. Needs v0.3.0 or later."}
   patches:
     - name: civo-cluster
       definitions:
@@ -103,9 +111,45 @@ spec:
             - {op: replace, path: /spec/template/spec/civoVersion, valueFrom: {variable: civoVersion}}
             - {op: replace, path: /spec/template/spec/cniPlugin, valueFrom: {variable: cniPlugin}}
             - {op: replace, path: /spec/template/spec/nodeSize, valueFrom: {variable: nodeSize}}
-            - {op: replace, path: /spec/template/spec/nodeCount, valueFrom: {variable: nodeCount}}
             - {op: replace, path: /spec/template/spec/disableTraefik, valueFrom: {variable: disableTraefik}}
             - {op: replace, path: /spec/template/spec/disableMetricsServer, valueFrom: {variable: disableMetricsServer}}
+    - name: civo-node-count
+      enabledIf: '{{ if .nodeCount }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: replace, path: /spec/template/spec/nodeCount, valueFrom: {variable: nodeCount}}
+    # An adopted cluster keeps its node count unless one is given.
+    - name: civo-adopt
+      enabledIf: '{{ if .clusterID }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: add, path: /spec/template/spec/clusterID, valueFrom: {variable: clusterID}}
+    - name: civo-adopt-node-count
+      enabledIf: '{{ if and .clusterID (not .nodeCount) }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: remove, path: /spec/template/spec/nodeCount}
+    - name: civo-deletion-policy
+      enabledIf: '{{ if .deletionPolicy }}true{{ end }}'
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+            kind: CivoControlPlaneTemplate
+            matchResources: {controlPlane: true}
+          jsonPatches:
+            - {op: add, path: /spec/template/spec/deletionPolicy, valueFrom: {variable: deletionPolicy}}
     # Only when set, so clusters that don't use it see no change.
     - name: civo-firewall
       enabledIf: '{{ if .firewallID }}true{{ end }}'

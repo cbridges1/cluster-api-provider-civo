@@ -2,6 +2,12 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+// Deletion policies.
+const (
+	DeletionPolicyDelete = "Delete"
+	DeletionPolicyRetain = "Retain"
+)
+
 // CivoControlPlaneSpec is a Civo managed Kubernetes cluster (K3s or Talos)
 // with one node pool.
 type CivoControlPlaneSpec struct {
@@ -33,9 +39,9 @@ type CivoControlPlaneSpec struct {
 	NodeSize string `json:"nodeSize,omitempty"`
 
 	// nodeCount is the pool's node count; changing it scales the pool.
+	// Unset, a new cluster gets 3 and an adopted one keeps its own.
 	// +optional
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:default=3
 	NodeCount int32 `json:"nodeCount,omitempty"`
 
 	// applications are Civo marketplace applications to install.
@@ -62,6 +68,21 @@ type CivoControlPlaneSpec struct {
 	// +optional
 	// +listType=atomic
 	FirewallRules []FirewallRule `json:"firewallRules,omitempty"`
+
+	// clusterID adopts the existing Civo cluster with this ID instead of
+	// creating one; its name can differ from the Cluster's. It keeps its
+	// own version, node size and (with nodeCount unset) node count. An ID
+	// another CivoControlPlane already manages is refused.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterID can't be changed"
+	ClusterID string `json:"clusterID,omitempty"`
+
+	// deletionPolicy is what deleting this object does to the Civo
+	// cluster: Delete (the default) removes it, its volumes and the
+	// firewall Civo made for it; Retain leaves them all.
+	// +optional
+	// +kubebuilder:validation:Enum=Delete;Retain
+	DeletionPolicy string `json:"deletionPolicy,omitempty"`
 
 	// controlPlaneEndpoint is the cluster's API endpoint. Set by the
 	// provider.
@@ -155,6 +176,11 @@ type CivoControlPlaneTemplateResourceSpec struct {
 	// +optional
 	// +listType=atomic
 	FirewallRules []FirewallRule `json:"firewallRules,omitempty"`
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+	// +optional
+	// +kubebuilder:validation:Enum=Delete;Retain
+	DeletionPolicy string `json:"deletionPolicy,omitempty"`
 }
 
 // FirewallRule is one ingress rule: a port (or range) for a protocol,

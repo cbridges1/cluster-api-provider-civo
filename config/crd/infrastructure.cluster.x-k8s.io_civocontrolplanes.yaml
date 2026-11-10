@@ -67,6 +67,16 @@ spec:
               civoVersion:
                 description: civoVersion is an exact Civo version label (e.g. 1.31.2-k3s1).
                 type: string
+              clusterID:
+                description: |-
+                  clusterID adopts the existing Civo cluster with this ID instead of
+                  creating one; its name can differ from the Cluster's. It keeps its
+                  own version, node size and (with nodeCount unset) node count. An ID
+                  another CivoControlPlane already manages is refused.
+                type: string
+                x-kubernetes-validations:
+                - message: clusterID can't be changed
+                  rule: self == oldSelf
               clusterType:
                 default: k3s
                 description: clusterType is k3s or talos.
@@ -98,6 +108,15 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              deletionPolicy:
+                description: |-
+                  deletionPolicy is what deleting this object does to the Civo
+                  cluster: Delete (the default) removes it, its volumes and the
+                  firewall Civo made for it; Retain leaves them all.
+                enum:
+                - Delete
+                - Retain
+                type: string
               disableMetricsServer:
                 description: disableMetricsServer removes the default metrics-server.
                 type: boolean
@@ -152,9 +171,9 @@ spec:
                 type: array
                 x-kubernetes-list-type: atomic
               nodeCount:
-                default: 3
-                description: nodeCount is the pool's node count; changing it scales
-                  the pool.
+                description: |-
+                  nodeCount is the pool's node count; changing it scales the pool.
+                  Unset, a new cluster gets 3 and an adopted one keeps its own.
                 format: int32
                 minimum: 1
                 type: integer

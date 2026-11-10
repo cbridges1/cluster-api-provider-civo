@@ -43,7 +43,7 @@ with open(os.path.join(out, "metadata.yaml"), "w") as fh:
         "kind": "Metadata",
         # One entry per minor release: clusterctl refuses a version whose
         # series isn't listed.
-        "releaseSeries": [{"major": 0, "minor": 1, "contract": "v1beta2"}, {"major": 0, "minor": 2, "contract": "v1beta2"}],
+        "releaseSeries": [{"major": 0, "minor": 1, "contract": "v1beta2"}, {"major": 0, "minor": 2, "contract": "v1beta2"}, {"major": 0, "minor": 3, "contract": "v1beta2"}],
     }, fh, sort_keys=False)
 classes = sorted(glob.glob(os.path.join(root, "templates/clusterclass-*.yaml")))
 for f in classes:

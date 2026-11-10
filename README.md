@@ -14,10 +14,11 @@ with clusterctl, the Cluster API Operator and
 | Kind | What it is |
 |---|---|
 | `CivoCluster` | `region`, `credentialsRef` (a Secret with `token`), optional `networkID`. Provisioned once the API key works there. |
-| `CivoControlPlane` | The managed cluster: `version` (from the Cluster's topology, matched to Civo's labels; or `civoVersion`), `clusterType` (k3s/talos), `cniPlugin` (flannel/cilium), `nodeSize`, `nodeCount`, `applications`, `disableTraefik`, `disableMetricsServer`, optional `firewallID`, and `firewallRules` (extra ingress rules — protocol, port, endPort, cidrs — the provider keeps on the cluster's firewall; it adds missing ones and removes ones dropped from the list, leaving Civo's and hand-made rules alone). |
+| `CivoControlPlane` | The managed cluster: `version` (from the Cluster's topology, matched to Civo's labels; or `civoVersion`), `clusterType` (k3s/talos), `cniPlugin` (flannel/cilium), `nodeSize`, `nodeCount`, `applications`, `disableTraefik`, `disableMetricsServer`, optional `firewallID`, `clusterID` (adopt an existing cluster), `deletionPolicy` (`Delete` or `Retain`), and `firewallRules` (extra ingress rules — protocol, port, endPort, cidrs — the provider keeps on the cluster's firewall; it adds missing ones and removes ones dropped from the list, leaving Civo's and hand-made rules alone). |
 
 Both have `…Template` kinds; see [templates/clusterclass-civo.yaml](templates/clusterclass-civo.yaml).
-A Civo cluster with the Cluster's name is adopted rather than duplicated.
+A Civo cluster with the Cluster's name is adopted rather than duplicated
+(unless `clusterID` is set); see [Adopting a cluster](#adopting-a-cluster).
 
 ## Install
 
@@ -50,6 +51,34 @@ namespace:
 
 ```bash
 kubectl -n <cluster namespace> create secret generic civo-credentials --from-literal=token=...
+```
+
+## Adopting a cluster
+
+To bring a Civo cluster made some other way under Cluster API, set
+`clusterID` to its ID (`civo k8s show NAME`). The provider takes it over
+instead of creating one; the Cluster's name needn't match. It refuses an ID
+another CivoControlPlane manages.
+
+- It keeps its version, node size and, while `nodeCount` is unset, its node
+  count. Setting `nodeCount` later scales it.
+- `deletionPolicy: Retain` makes deleting the Cluster leave the Civo
+  cluster, its volumes and its firewall; with `Delete` (the default) they go
+  with it.
+- `clusterID` can't be changed once set.
+
+With the ClusterClass, these are the `clusterID` and `deletionPolicy`
+variables:
+
+```yaml
+spec:
+  topology:
+    classRef: {name: civo}
+    version: v1.35.0
+    variables:
+      - {name: region, value: LON1}
+      - {name: clusterID, value: 7f3c0d6e-...}
+      - {name: deletionPolicy, value: Retain}
 ```
 
 ## Develop

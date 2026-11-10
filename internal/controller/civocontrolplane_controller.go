@@ -114,8 +114,9 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 	}
 	name := cluster.GetName()
 
-	// Find or create the Civo cluster (adopting one of the same name, so a
-	// lost status doesn't make a second cluster).
+	// Find the Civo cluster: the one it already has, the one clusterID
+	// adopts, or one of the same name (so a lost status doesn't make a
+	// second cluster). Otherwise create it.
 	var kc *civogo.KubernetesCluster
 	if cp.Status.ClusterID != "" {
 		kc, err = api.GetKubernetesCluster(cp.Status.ClusterID)
@@ -123,7 +124,16 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 			return ctrl.Result{}, err
 		}
 	}
-	if kc == nil {
+	if kc == nil && cp.Spec.ClusterID != "" {
+		kc, err = api.GetKubernetesCluster(cp.Spec.ClusterID)
+		if civo.IsNotFound(err) {
+			return wait(time.Minute, "ClusterNotFound", "no Civo cluster "+cp.Spec.ClusterID+" in "+cc.Spec.Region)
+		}
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	if kc == nil && cp.Spec.ClusterID == "" {
 		list, err := api.ListKubernetesClusters()
 		if err != nil {
 			return ctrl.Result{}, err
@@ -131,9 +141,18 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 		for i := range list.Items {
 			if list.Items[i].Name == name {
 				kc = &list.Items[i]
-				lg.Info("adopting existing Civo cluster", "name", name, "id", kc.ID)
 			}
 		}
+	}
+	if kc != nil && cp.Status.ClusterID != kc.ID {
+		other, err := r.managedBy(ctx, cp, kc.ID)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if other != "" {
+			return wait(time.Minute, "AlreadyManaged", "Civo cluster "+kc.ID+" is managed by CivoControlPlane "+other)
+		}
+		lg.Info("adopting existing Civo cluster", "name", kc.Name, "id", kc.ID)
 	}
 	if kc == nil {
 		versions, err := api.ListAvailableKubernetesVersions()
@@ -179,9 +198,12 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 	if cp.Spec.ControlPlaneEndpoint != ep {
 		patch := client.MergeFrom(cp.DeepCopy())
 		cp.Spec.ControlPlaneEndpoint = ep
+		// The patch reads back the stored status: keep this pass's.
+		status := cp.Status.DeepCopy()
 		if err := r.Client.Patch(ctx, cp, patch); err != nil {
 			return ctrl.Result{}, err
 		}
+		cp.Status = *status
 	}
 	if err := r.writeKubeconfig(ctx, cp, name, []byte(kc.KubeConfig)); err != nil {
 		return ctrl.Result{}, err
@@ -223,7 +245,11 @@ func (r *CivoControlPlaneReconciler) delete(ctx context.Context, cp *v1alpha1.Ci
 	if !controllerutil.ContainsFinalizer(cp, Finalizer) {
 		return ctrl.Result{}, nil
 	}
-	if cp.Status.ClusterID != "" && cluster != nil {
+	if cp.Spec.DeletionPolicy == v1alpha1.DeletionPolicyRetain {
+		if cp.Status.ClusterID != "" {
+			lg.Info("leaving the Civo cluster (deletionPolicy Retain)", "id", cp.Status.ClusterID)
+		}
+	} else if cp.Status.ClusterID != "" && cluster != nil {
 		_, api, err := r.api(ctx, cluster)
 		if err != nil {
 			lg.Info("can't reach Civo to delete the cluster; retrying", "error", err.Error())
@@ -258,6 +284,21 @@ func (r *CivoControlPlaneReconciler) delete(ctx context.Context, cp *v1alpha1.Ci
 	}
 	controllerutil.RemoveFinalizer(cp, Finalizer)
 	return ctrl.Result{}, r.Client.Update(ctx, cp)
+}
+
+// managedBy is the namespace/name of another CivoControlPlane whose
+// cluster is id, or "".
+func (r *CivoControlPlaneReconciler) managedBy(ctx context.Context, cp *v1alpha1.CivoControlPlane, id string) (string, error) {
+	var list v1alpha1.CivoControlPlaneList
+	if err := r.Client.List(ctx, &list); err != nil {
+		return "", err
+	}
+	for _, o := range list.Items {
+		if o.UID != cp.UID && o.Status.ClusterID == id {
+			return o.Namespace + "/" + o.Name, nil
+		}
+	}
+	return "", nil
 }
 
 // deleteVolumes deletes the workload cluster's PVCs and reports whether

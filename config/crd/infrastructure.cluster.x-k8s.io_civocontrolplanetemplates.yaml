@@ -70,6 +70,8 @@ spec:
                         type: array
                       civoVersion:
                         type: string
+                      clusterID:
+                        type: string
                       clusterType:
                         enum:
                         - k3s
@@ -79,6 +81,11 @@ spec:
                         enum:
                         - flannel
                         - cilium
+                        type: string
+                      deletionPolicy:
+                        enum:
+                        - Delete
+                        - Retain
                         type: string
                       disableMetricsServer:
                         type: boolean
