@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	bootstrapv1 "github.com/cbridges1/cluster-api-provider-civo/api/bootstrap/v1alpha1"
 	"github.com/cbridges1/cluster-api-provider-civo/api/v1alpha1"
 	"github.com/cbridges1/cluster-api-provider-civo/internal/civo"
 	"github.com/cbridges1/cluster-api-provider-civo/internal/controller"
@@ -32,6 +33,7 @@ func main() {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = v1alpha1.AddToScheme(scheme)
+	_ = bootstrapv1.AddToScheme(scheme)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -50,6 +52,14 @@ func main() {
 	}
 	if err := (&controller.CivoControlPlaneReconciler{Client: mgr.GetClient(), NewAPI: civo.NewAPI}).SetupWithManager(mgr); err != nil {
 		lg.Error(err, "CivoControlPlane controller")
+		os.Exit(1)
+	}
+	if err := (&controller.CivoMachinePoolReconciler{Client: mgr.GetClient(), NewAPI: civo.NewAPI}).SetupWithManager(mgr); err != nil {
+		lg.Error(err, "CivoMachinePool controller")
+		os.Exit(1)
+	}
+	if err := (&controller.CivoConfigReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); err != nil {
+		lg.Error(err, "CivoConfig controller")
 		os.Exit(1)
 	}
 	_ = mgr.AddHealthzCheck("ping", healthz.Ping)

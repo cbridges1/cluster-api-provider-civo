@@ -1,0 +1,214 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: civomachinepools.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CivoMachinePool
+    listKind: CivoMachinePoolList
+    plural: civomachinepools
+    singular: civomachinepool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - jsonPath: .status.poolID
+      name: Pool
+      type: string
+    - jsonPath: .status.size
+      name: Size
+      type: string
+    - jsonPath: .status.replicas
+      name: Replicas
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: CivoMachinePool is a node pool of a Civo managed cluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CivoMachinePoolSpec is a node pool of a Civo managed cluster: Cluster
+              API's InfraMachinePool, as AWSManagedMachinePool is for EKS and
+              AzureManagedMachinePool for AKS. Its MachinePool's replicas are the
+              pool's node count.
+            properties:
+              labels:
+                additionalProperties:
+                  type: string
+                description: labels are put on the pool's nodes when it's made.
+                type: object
+              poolID:
+                description: |-
+                  poolID adopts this existing pool of the cluster. Unset, the pool
+                  is the one the provider made for it, or (on a cluster that was
+                  adopted or made before machine pools) one of the cluster's pools
+                  no other CivoMachinePool has.
+                type: string
+                x-kubernetes-validations:
+                - message: poolID can't be changed
+                  rule: self == oldSelf
+              providerIDList:
+                description: |-
+                  providerIDList is the pool's nodes (civo://INSTANCE-ID). Set by the
+                  provider.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
+              publicIPNodePool:
+                description: publicIPNodePool gives the pool's nodes public IPs.
+                type: boolean
+              size:
+                default: g4s.kube.medium
+                description: |-
+                  size is the nodes' instance size (e.g. g4s.kube.medium). Civo can't
+                  change a pool's size: a different size takes a new pool.
+                type: string
+              taints:
+                description: taints are put on the pool's nodes when it's made.
+                items:
+                  description: |-
+                    The node this Taint is attached to has the "effect" on
+                    any pod that does not tolerate the Taint.
+                  properties:
+                    effect:
+                      description: |-
+                        Required. The effect of the taint on pods
+                        that do not tolerate the taint.
+                        Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+                      type: string
+                    key:
+                      description: Required. The taint key to be applied to a node.
+                      type: string
+                    timeAdded:
+                      description: TimeAdded represents the time at which the taint
+                        was added.
+                      format: date-time
+                      type: string
+                    value:
+                      description: The taint value corresponding to the taint key.
+                      type: string
+                  required:
+                  - effect
+                  - key
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
+            type: object
+          status:
+            description: CivoMachinePoolStatus is the observed state.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              initialization:
+                description: CivoMachinePoolInitializationStatus reports Cluster API
+                  initialization.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: provisioned is true once the pool exists.
+                    type: boolean
+                type: object
+              poolID:
+                description: poolID is the Civo pool's ID.
+                type: string
+              replicas:
+                description: replicas is the pool's node count, as Civo last reported
+                  it.
+                format: int32
+                type: integer
+              size:
+                description: size is the pool's instance size, as Civo reports it.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,77 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: civoconfigs.bootstrap.cluster.x-k8s.io
+spec:
+  group: bootstrap.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CivoConfig
+    listKind: CivoConfigList
+    plural: civoconfigs
+    singular: civoconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: CivoConfig is the bootstrap config of a Civo machine pool's nodes.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CivoConfigSpec is empty: Civo builds and joins a managed cluster's nodes
+              itself. A MachinePool needs a bootstrap config all the same (and a
+              ClusterClass's machine pool class a bootstrap template), as EKSConfig
+              is for EKS managed node groups.
+            type: object
+          status:
+            description: CivoConfigStatus is the observed state.
+            properties:
+              dataSecretName:
+                description: 'dataSecretName is the bootstrap data Secret: empty,
+                  as Civo needs none.'
+                type: string
+              initialization:
+                description: CivoConfigInitializationStatus reports Cluster API initialization.
+                minProperties: 1
+                properties:
+                  dataSecretCreated:
+                    description: |-
+                      dataSecretCreated is true once the (empty) bootstrap data Secret
+                      exists.
+                    type: boolean
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

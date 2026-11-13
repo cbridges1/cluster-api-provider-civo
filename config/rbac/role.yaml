@@ -23,6 +23,23 @@ rules:
   - update
   - watch
 - apiGroups:
+  - bootstrap.cluster.x-k8s.io
+  resources:
+  - civoconfigs
+  - civoconfigtemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - bootstrap.cluster.x-k8s.io
+  resources:
+  - civoconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - cluster.x-k8s.io
   resources:
   - clusters
@@ -31,12 +48,23 @@ rules:
   - list
   - watch
 - apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - machinepools
+  verbs:
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
   - infrastructure.cluster.x-k8s.io
   resources:
   - civoclusters
   - civoclustertemplates
   - civocontrolplanes
   - civocontrolplanetemplates
+  - civomachinepools
+  - civomachinepooltemplates
   verbs:
   - get
   - list
@@ -49,6 +77,8 @@ rules:
   - civoclusters/status
   - civocontrolplanes/finalizers
   - civocontrolplanes/status
+  - civomachinepools/finalizers
+  - civomachinepools/status
   verbs:
   - get
   - patch

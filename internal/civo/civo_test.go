@@ -41,7 +41,7 @@ func TestMatchVersion(t *testing.T) {
 }
 
 func TestConfigDefaults(t *testing.T) {
-	c := Config("web", "LON1", "net-1", "1.31.2-k3s1", &v1alpha1.CivoControlPlaneSpec{})
+	c := Config("web", "LON1", "net-1", "1.31.2-k3s1", &v1alpha1.CivoControlPlaneSpec{}, nil)
 	if c.ClusterType != "k3s" || c.CNIPlugin != "flannel" || c.Pools[0].Count != 3 || c.Pools[0].Size != "g4s.kube.medium" || c.NetworkID != "net-1" {
 		t.Errorf("config = %+v", c)
 	}

@@ -30,6 +30,10 @@ type fakeCivo struct {
 	scaled           []int
 	rules            []civogo.FirewallRule
 	nextRule         int
+	// ignorePoolIDs makes the fake name pools itself, as Civo might.
+	ignorePoolIDs bool
+	poolsCreated  int
+	poolsDeleted  []string
 }
 
 func (f *fakeCivo) ListKubernetesClusters() (*civogo.PaginatedKubernetesClusters, error) {
@@ -41,8 +45,14 @@ func (f *fakeCivo) ListKubernetesClusters() (*civogo.PaginatedKubernetesClusters
 }
 func (f *fakeCivo) NewKubernetesClusters(c *civogo.KubernetesClusterConfig) (*civogo.KubernetesCluster, error) {
 	f.created = append(f.created, c)
-	kc := &civogo.KubernetesCluster{ID: "kc-1", Name: c.Name, Status: "BUILDING", FirewallID: "fw-1",
-		Pools: []civogo.KubernetesPool{{ID: "pool-1", Count: c.Pools[0].Count, Size: c.Pools[0].Size}}}
+	kc := &civogo.KubernetesCluster{ID: "kc-1", Name: c.Name, Status: "BUILDING", FirewallID: "fw-1"}
+	for i, p := range c.Pools {
+		id := p.ID
+		if id == "" || f.ignorePoolIDs {
+			id = fmt.Sprintf("pool-%d", i+1)
+		}
+		kc.Pools = append(kc.Pools, civogo.KubernetesPool{ID: id, Count: p.Count, Size: p.Size})
+	}
 	f.clusters[kc.ID] = kc
 	return kc, nil
 }
@@ -57,8 +67,33 @@ func (f *fakeCivo) UpdateKubernetesCluster(string, *civogo.KubernetesClusterConf
 }
 func (f *fakeCivo) UpdateKubernetesClusterPool(cid, pid string, c *civogo.KubernetesClusterPoolUpdateConfig) (*civogo.KubernetesPool, error) {
 	f.scaled = append(f.scaled, *c.Count)
-	f.clusters[cid].Pools[0].Count = *c.Count
-	return &f.clusters[cid].Pools[0], nil
+	for i := range f.clusters[cid].Pools {
+		if p := &f.clusters[cid].Pools[i]; p.ID == pid {
+			p.Count = *c.Count
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("404 NotFound")
+}
+func (f *fakeCivo) CreateKubernetesClusterPool(cid string, c *civogo.KubernetesClusterPoolConfig) (*civogo.SimpleResponse, error) {
+	id := c.ID
+	if f.ignorePoolIDs {
+		id = fmt.Sprintf("pool-%d", len(f.clusters[cid].Pools)+1)
+	}
+	f.clusters[cid].Pools = append(f.clusters[cid].Pools, civogo.KubernetesPool{ID: id, Count: c.Count, Size: c.Size})
+	f.poolsCreated++
+	return &civogo.SimpleResponse{Result: "success"}, nil
+}
+func (f *fakeCivo) DeleteKubernetesClusterPool(cid, pid string) (*civogo.SimpleResponse, error) {
+	pools := f.clusters[cid].Pools
+	for i := range pools {
+		if pools[i].ID == pid {
+			f.clusters[cid].Pools = append(pools[:i], pools[i+1:]...)
+			f.poolsDeleted = append(f.poolsDeleted, pid)
+			return &civogo.SimpleResponse{Result: "success"}, nil
+		}
+	}
+	return nil, fmt.Errorf("404 NotFound")
 }
 func (f *fakeCivo) DeleteKubernetesCluster(id string) (*civogo.SimpleResponse, error) {
 	delete(f.clusters, id)

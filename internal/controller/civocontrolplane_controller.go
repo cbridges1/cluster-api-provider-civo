@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -38,6 +37,7 @@ type CivoControlPlaneReconciler struct {
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=civocontrolplanes;civocontrolplanetemplates,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=civocontrolplanes/status;civocontrolplanes/finalizers,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machinepools,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // Reconcile implements reconcile.Reconciler.
@@ -80,20 +80,7 @@ func (r *CivoControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 // api returns the Cluster's CivoCluster and an API client for it.
 func (r *CivoControlPlaneReconciler) api(ctx context.Context, cluster *unstructured.Unstructured) (*v1alpha1.CivoCluster, civo.API, error) {
-	name, _, _ := unstructured.NestedString(cluster.Object, "spec", "infrastructureRef", "name")
-	if name == "" {
-		return nil, nil, fmt.Errorf("%w: Cluster has no infrastructureRef yet", errNotReady)
-	}
-	var cc v1alpha1.CivoCluster
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: cluster.GetNamespace(), Name: name}, &cc); err != nil {
-		return nil, nil, err
-	}
-	tok, err := token(ctx, r.Client, &cc)
-	if err != nil {
-		return &cc, nil, err
-	}
-	a, err := r.NewAPI(tok, cc.Spec.Region)
-	return &cc, a, err
+	return civoAPI(ctx, r.Client, r.NewAPI, cluster)
 }
 
 func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1.CivoControlPlane, cluster *unstructured.Unstructured) (ctrl.Result, error) {
@@ -163,8 +150,15 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		cfg := civo.Config(name, cc.Spec.Region, cc.Spec.NetworkID, version, &cp.Spec)
-		lg.Info("creating Civo cluster", "name", name, "region", cc.Spec.Region, "version", version, "size", cfg.Pools[0].Size, "nodes", cfg.Pools[0].Count)
+		pools, waiting, err := r.initialPools(ctx, cluster, cc.Spec.Region)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if waiting != "" {
+			return wait(5*time.Second, "WaitingForMachinePools", waiting)
+		}
+		cfg := civo.Config(name, cc.Spec.Region, cc.Spec.NetworkID, version, &cp.Spec, pools)
+		lg.Info("creating Civo cluster", "name", name, "region", cc.Spec.Region, "version", version, "pools", len(cfg.Pools), "size", cfg.Pools[0].Size, "nodes", cfg.Pools[0].Count)
 		kc, err = api.NewKubernetesClusters(cfg)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("creating Civo cluster: %w", err)
@@ -209,8 +203,13 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 		return ctrl.Result{}, err
 	}
 
-	// Scale the pool to nodeCount.
-	if want := int(cp.Spec.NodeCount); want > 0 && len(kc.Pools) > 0 && kc.Pools[0].Count != want {
+	// Without machine pools (a ClusterClass from before them), scale the
+	// pool to nodeCount. With them, each scales its own.
+	mps, err := machinePools(ctx, r.Client, cluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if want := int(cp.Spec.NodeCount); want > 0 && len(mps) == 0 && len(topologyPools(cluster)) == 0 && len(kc.Pools) > 0 && kc.Pools[0].Count != want {
 		lg.Info("scaling Civo node pool", "pool", kc.Pools[0].ID, "from", kc.Pools[0].Count, "to", want)
 		if _, err := api.UpdateKubernetesClusterPool(kc.ID, kc.Pools[0].ID, &civogo.KubernetesClusterPoolUpdateConfig{Count: &want, Region: cc.Spec.Region}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("scaling pool: %w", err)
@@ -221,6 +220,39 @@ func (r *CivoControlPlaneReconciler) reconcile(ctx context.Context, cp *v1alpha1
 	cp.Status.Version = cp.Spec.Version
 	v1alpha1.SetCondition(&cp.Status.Conditions, condition(true, "Active", fmt.Sprintf("Civo cluster %s active (%s)", kc.ID, kc.Version)))
 	return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
+}
+
+// initialPools are the pools a new Civo cluster is made with: one for
+// each machine pool its topology lists, once their CivoMachinePools and
+// MachinePools exist (Civo makes a cluster with its pools, and Cluster
+// API makes them alongside the control plane). Each pool's ID is its
+// CivoMachinePool's UID, which finds it again. None without machine
+// pools; a reason to wait while they're still being made.
+func (r *CivoControlPlaneReconciler) initialPools(ctx context.Context, cluster *unstructured.Unstructured, region string) ([]civogo.KubernetesClusterPoolConfig, string, error) {
+	want := len(topologyPools(cluster))
+	if want == 0 {
+		return nil, "", nil
+	}
+	mps, err := machinePools(ctx, r.Client, cluster)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(mps) < want {
+		return nil, fmt.Sprintf("waiting for the cluster's machine pools (%d of %d)", len(mps), want), nil
+	}
+	var pools []civogo.KubernetesClusterPoolConfig
+	for i := range mps {
+		mp, err := ownerMachinePool(ctx, r.Client, &mps[i])
+		if err != nil {
+			return nil, "", err
+		}
+		if mp == nil {
+			return nil, "waiting for CivoMachinePool " + mps[i].Name + "'s MachinePool", nil
+		}
+		n, _, _ := unstructured.NestedInt64(mp.Object, "spec", "replicas")
+		pools = append(pools, civo.PoolConfig(string(mps[i].UID), region, int32(n), &mps[i].Spec))
+	}
+	return pools, "", nil
 }
 
 func (r *CivoControlPlaneReconciler) writeKubeconfig(ctx context.Context, cp *v1alpha1.CivoControlPlane, clusterName string, kc []byte) error {

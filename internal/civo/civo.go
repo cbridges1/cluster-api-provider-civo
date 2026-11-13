@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/civo/civogo"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/cbridges1/cluster-api-provider-civo/api/v1alpha1"
 )
@@ -22,6 +23,8 @@ type API interface {
 	GetKubernetesCluster(id string) (*civogo.KubernetesCluster, error)
 	UpdateKubernetesCluster(id string, c *civogo.KubernetesClusterConfig) (*civogo.KubernetesCluster, error)
 	UpdateKubernetesClusterPool(cid, pid string, c *civogo.KubernetesClusterPoolUpdateConfig) (*civogo.KubernetesPool, error)
+	CreateKubernetesClusterPool(cid string, c *civogo.KubernetesClusterPoolConfig) (*civogo.SimpleResponse, error)
+	DeleteKubernetesClusterPool(cid, pid string) (*civogo.SimpleResponse, error)
 	DeleteKubernetesCluster(id string) (*civogo.SimpleResponse, error)
 	ListAvailableKubernetesVersions() ([]civogo.KubernetesVersion, error)
 	DeleteFirewall(id string) (*civogo.SimpleResponse, error)
@@ -107,15 +110,19 @@ func MatchVersion(spec *v1alpha1.CivoControlPlaneSpec, available []civogo.Kubern
 	return hits[len(hits)-1], nil
 }
 
-// Config builds the create request.
-func Config(name, region, networkID, version string, spec *v1alpha1.CivoControlPlaneSpec) *civogo.KubernetesClusterConfig {
-	count := int(spec.NodeCount)
-	if count == 0 {
-		count = 3
-	}
-	size := spec.NodeSize
-	if size == "" {
-		size = "g4s.kube.medium"
+// DefaultSize is a pool's instance size when none is given.
+const DefaultSize = "g4s.kube.medium"
+
+// Config builds the create request: with pools, the cluster's machine
+// pools; without, one pool of nodeSize and nodeCount (a ClusterClass
+// without machine pools).
+func Config(name, region, networkID, version string, spec *v1alpha1.CivoControlPlaneSpec, pools []civogo.KubernetesClusterPoolConfig) *civogo.KubernetesClusterConfig {
+	if len(pools) == 0 {
+		count := int(spec.NodeCount)
+		if count == 0 {
+			count = 3
+		}
+		pools = []civogo.KubernetesClusterPoolConfig{{Count: count, Size: firstNonEmpty(spec.NodeSize, DefaultSize)}}
 	}
 	return &civogo.KubernetesClusterConfig{
 		Name:              name,
@@ -127,8 +134,39 @@ func Config(name, region, networkID, version string, spec *v1alpha1.CivoControlP
 		FirewallID:        spec.FirewallID,
 		Applications:      Applications(spec),
 		Tags:              "cluster-api",
-		Pools:             []civogo.KubernetesClusterPoolConfig{{Count: count, Size: size}},
+		Pools:             pools,
 	}
+}
+
+// PoolConfig is the request for a machine pool's Civo pool, with the
+// given ID and node count (at least one: Civo has no empty pools).
+func PoolConfig(id, region string, count int32, spec *v1alpha1.CivoMachinePoolSpec) civogo.KubernetesClusterPoolConfig {
+	taints := spec.Taints
+	if taints == nil {
+		taints = []corev1.Taint{}
+	}
+	return civogo.KubernetesClusterPoolConfig{
+		ID:               id,
+		Region:           region,
+		Count:            int(max(count, 1)),
+		Size:             firstNonEmpty(spec.Size, DefaultSize),
+		Labels:           spec.Labels,
+		Taints:           taints,
+		PublicIPNodePool: spec.PublicIPNodePool,
+	}
+}
+
+// ProviderIDs are a pool's nodes as Kubernetes names them
+// (civo://INSTANCE-ID, set by Civo's cloud controller manager), sorted.
+func ProviderIDs(p *civogo.KubernetesPool) []string {
+	var ids []string
+	for _, in := range p.Instances {
+		if in.ID != "" {
+			ids = append(ids, "civo://"+in.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // Endpoint parses Civo's api_endpoint (https://IP:6443).
